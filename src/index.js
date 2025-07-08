@@ -1,13 +1,13 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import './index.css';
-import App from './App';
+import BCHBettingApp from './bet_bch'; // Importa tu componente BCHBettingApp
 import reportWebVitals from './reportWebVitals';
 
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(
   <React.StrictMode>
-    <App />
+    <BCHBettingApp /> {/* Renderiza tu componente BCHBettingApp */}
   </React.StrictMode>
 );
 
