@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { CircleDot, DollarSign, Copy, CheckCircle, AlertCircle, Clock, Calendar, Users, Zap, Send, QrCode, XCircle } from 'lucide-react'; // Added XCircle for clearing bet
+import { CircleDot, Copy, CheckCircle, AlertCircle, Clock, Calendar, Users, Zap, Send, QrCode, XCircle } from 'lucide-react';
+import BCHPriceDisplay from './components/BCHPriceDisplay'; // Import the new BCHPriceDisplay component
 
 const BCHBettingApp = () => {
   // State to hold the list of matches
   const [matches, setMatches] = useState([]);
   // State to hold the currently selected match for viewing outcomes
-  // Initialize from localStorage or null
   const [selectedMatch, setSelectedMatch] = useState(() => {
     try {
       const storedMatch = localStorage.getItem('selectedMatch');
@@ -15,8 +15,7 @@ const BCHBettingApp = () => {
       return null;
     }
   });
-  // State to hold the currently selected score outcome for betting
-  // Initialize from localStorage or null
+  // State to hold the currently selected score outcome for prediction
   const [selectedOutcome, setSelectedOutcome] = useState(() => {
     try {
       const storedOutcome = localStorage.getItem('selectedOutcome');
@@ -26,28 +25,27 @@ const BCHBettingApp = () => {
       return null;
     }
   });
-  // State for BCH to USD rate (initially a placeholder, will be fetched)
-  const [bchUsdRate, setBchUsdRate] = useState(0);
+  // State for the LIVE BCH to USD rate, updated by WebSocket
+  const [liveBchUsdRate, setLiveBchUsdRate] = useState(0); // Initialize to 0 or a sensible default
   // State for the fixed ticket value in USD
   const ticketValueUsd = 1.00;
   // State for copy-to-clipboard feedback
   const [copySuccess, setCopySuccess] = useState('');
 
   // States for the Simulate Prediction form
-  const [simulatePredictionMatchId, setSimulatePredictionMatchId] = useState('');
-  const [simulatePredictionOutcomeId, setSimulatePredictionOutcomeId] = useState('');
-  const [simulatePredictionMessage, setSimulatePredictionMessage] = useState('');
+  const [simulateBetMatchId, setSimulateBetMatchId] = useState('');
+  const [simulateBetOutcomeId, setSimulateBetOutcomeId] = useState('');
+  const [simulateBetMessage, setSimulateBetMessage] = useState('');
 
-  // Helper function to format date
-  const formatDate = (dateString) => {
-    const options = { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' };
-    return new Date(dateString).toLocaleDateString(undefined, options);
+  // Callback function to receive live BCH rate updates from BCHPriceDisplay
+  const handleLiveBchRateUpdate = (newRate) => {
+    setLiveBchUsdRate(newRate);
+    console.log("BCHBettingApp received live rate update:", newRate);
   };
 
-  // Effect to fetch match data and BCH rate from your Django backend API
-  // This useEffect will now also handle dynamic price updates
+  // Effect to fetch match data from your Django backend API
   useEffect(() => {
-    const fetchBCHData = async () => {
+    const fetchMatches = async () => {
       try {
         // Fetch matches from Django API
         const matchesResponse = await fetch('http://localhost:8000/api/matches/');
@@ -55,37 +53,23 @@ const BCHBettingApp = () => {
         setMatches(matchesData.matches);
         console.log("Fetched Matches:", matchesData.matches);
 
-        // Fetch BCH rate from Django API
-        const rateResponse = await fetch('http://localhost:8000/api/bch-rate/');
-        const rateData = await rateResponse.json();
-        // Ensure you're accessing the correct field from the BCHRateSerializer
-        setBchUsdRate(parseFloat(rateData.rate)); // <-- CORRECTED: Accessing 'rate' field
-        console.log("Fetched BCH USD Rate:", parseFloat(rateData.rate)); // <-- CORRECTED LOG
-
       } catch (error) {
-        console.error('Error fetching data from backend:', error);
-        // Optionally, set an error state or display a message if fetching fails
+        console.error('Error fetching initial match data from backend:', error);
       }
     };
 
     // Initial fetch when the component mounts
-    fetchBCHData();
-
-    // Set up interval to fetch BCH data every 60 seconds (60000 milliseconds)
-    const intervalId = setInterval(fetchBCHData, 60000);
-
-    // Cleanup function: This runs when the component unmounts
-    return () => clearInterval(intervalId);
-  }, []); // Empty dependency array ensures this effect runs once on mount and cleans up on unmount
+    fetchMatches();
+  }, []); // Empty dependency array ensures this effect runs once on mount
 
   // Effect to persist selectedMatch to localStorage whenever it changes
   useEffect(() => {
     if (selectedMatch) {
       localStorage.setItem('selectedMatch', JSON.stringify(selectedMatch));
-      // console.log("selectedMatch persisted:", selectedMatch); // Commented out for cleaner console
+      console.log("selectedMatch persisted:", selectedMatch);
     } else {
       localStorage.removeItem('selectedMatch');
-      // console.log("selectedMatch cleared from persistence."); // Commented out for cleaner console
+      console.log("selectedMatch cleared from persistence.");
     }
   }, [selectedMatch]);
 
@@ -93,16 +77,16 @@ const BCHBettingApp = () => {
   useEffect(() => {
     if (selectedOutcome) {
       localStorage.setItem('selectedOutcome', JSON.stringify(selectedOutcome));
-      // console.log("selectedOutcome persisted:", selectedOutcome); // Commented out for cleaner console
+      console.log("selectedOutcome persisted:", selectedOutcome);
     } else {
       localStorage.removeItem('selectedOutcome');
-      // console.log("selectedOutcome cleared from persistence."); // Commented out for cleaner console
+      console.log("selectedOutcome cleared from persistence.");
     }
   }, [selectedOutcome]);
 
-  // Calculate required BCH for one ticket (only if bchUsdRate is not 0 to avoid division by zero)
-  const requiredBCH = bchUsdRate > 0 ? (ticketValueUsd / bchUsdRate).toFixed(8) : 'Loading...';
-  // console.log("Required BCH per ticket:", requiredBCH); // Commented out for cleaner console
+  // Calculate required BCH for one ticket using the LIVE BCH rate
+  const requiredBCH = liveBchUsdRate > 0 ? (ticketValueUsd / liveBchUsdRate).toFixed(8) : 'Loading...';
+  console.log("Required BCH per ticket (live):", requiredBCH);
 
   // Function to copy text to clipboard (generalized)
   const copyToClipboard = (text, successMessage = 'Copied!') => {
@@ -123,43 +107,43 @@ const BCHBettingApp = () => {
   };
 
   // Handler for simulating a prediction
-  const handleSimulatePrediction = async (e) => {
+  const handleSimulateBet = async (e) => {
     e.preventDefault();
-    setSimulatePredictionMessage('Sending simulated prediction...');
+    setSimulateBetMessage('Sending simulated prediction...');
 
     try {
-      const response = await fetch('http://localhost:8000/api/simulate-prediction/', { // Corrected endpoint
+      const response = await fetch('http://localhost:8000/api/simulate-prediction/', { // Updated endpoint
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          match_id: simulatePredictionMatchId,
-          score_outcome_id: simulatePredictionOutcomeId,
+          match_id: simulateBetMatchId,
+          score_outcome_id: simulateBetOutcomeId,
         }),
       });
 
       const data = await response.json();
 
       if (response.ok) {
-        setSimulatePredictionMessage(`Success: ${data.message} (Entries: ${data.num_tickets})`); // Changed "Tickets" to "Entries"
+        setSimulateBetMessage(`Success: ${data.message} (Tickets: ${data.num_tickets})`);
         // Optionally, re-fetch matches to update counts in the UI
         const matchesResponse = await fetch('http://localhost:8000/api/matches/');
         const matchesData = await matchesResponse.json();
         setMatches(matchesData.matches);
       } else {
-        setSimulatePredictionMessage(`Error: ${data.error || 'Something went wrong.'}`);
+        setSimulateBetMessage(`Error: ${data.error || 'Something went wrong.'}`);
       }
     } catch (error) {
       console.error('Error simulating prediction:', error);
-      setSimulatePredictionMessage('Network error or server unreachable.');
+      setSimulateBetMessage('Network error or server unreachable.');
     } finally {
-      setTimeout(() => setSimulatePredictionMessage(''), 5000); // Clear message after 5 seconds
+      setTimeout(() => setSimulateBetMessage(''), 5000); // Clear message after 5 seconds
     }
   };
 
   // Function to clear the selected prediction (match and outcome)
-  const clearSelectedPrediction = () => { // Changed function name
+  const clearSelectedBet = () => {
     setSelectedMatch(null);
     setSelectedOutcome(null);
     // localStorage effects will handle clearing the storage
@@ -170,8 +154,8 @@ const BCHBettingApp = () => {
     ? `${selectedOutcome.bch_address}?amount=${requiredBCH}`
     : '';
 
-  // console.log("Current selectedOutcome for QR:", selectedOutcome); // Commented out for cleaner console
-  // console.log("bchPaymentUri:", bchPaymentUri); // Commented out for cleaner console
+  console.log("Current selectedOutcome for QR:", selectedOutcome);
+  console.log("bchPaymentUri:", bchPaymentUri);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4 sm:p-6 lg:p-8 font-inter antialiased">
@@ -180,12 +164,10 @@ const BCHBettingApp = () => {
         <header className="bg-blue-700 text-white p-6 sm:p-8 flex items-center justify-between rounded-t-2xl">
           <div className="flex items-center space-x-4">
             <CircleDot size={36} className="text-blue-200" />
-            <h1 className="text-3xl sm:text-4xl font-bold tracking-tight">Club Cup BCH Prediction</h1> {/* Changed "Bets" to "Prediction" */}
+            <h1 className="text-3xl sm:text-4xl font-bold tracking-tight">Club Cup BCH Predictions</h1> {/* Changed "Bets" to "Predictions" */}
           </div>
-          <div className="flex items-center space-x-2 bg-blue-600 px-4 py-2 rounded-full text-sm font-medium">
-            <DollarSign size={18} />
-            <span>1 BCH = ${bchUsdRate === 0 ? 'Loading...' : bchUsdRate.toFixed(2)} USD</span>
-          </div>
+          {/* Pass the callback to BCHPriceDisplay */}
+          <BCHPriceDisplay onRateUpdate={handleLiveBchRateUpdate} /> 
         </header>
 
         <main className="p-6 sm:p-8">
@@ -199,46 +181,41 @@ const BCHBettingApp = () => {
                 matches.map(match => (
                   <div
                     key={match.match_id}
-                    className={`bg-white border border-gray-200 rounded-xl p-5 cursor-pointer transition-all duration-300 ease-in-out transform
-                                ${selectedMatch?.match_id === match.match_id
-                                  ? 'ring-4 ring-blue-500 shadow-xl scale-105' // More pronounced selection
-                                  : 'hover:shadow-lg hover:border-blue-400 hover:-translate-y-1' // Lift effect on hover
-                                }`}
+                    className={`bg-gray-50 border border-gray-200 rounded-xl p-4 cursor-pointer transition-all duration-200 ease-in-out
+                                ${selectedMatch?.match_id === match.match_id ? 'ring-2 ring-blue-500 shadow-md' : 'hover:shadow-lg hover:border-blue-500'}`}
                     onClick={() => {
                       setSelectedMatch(match);
                       setSelectedOutcome(null); // Reset outcome selection
+                      console.log("Selected Match:", match);
                     }}
                   >
-                    <div className="flex flex-col sm:flex-row items-center justify-between space-y-3 sm:space-y-0 sm:space-x-4">
-                      {/* Team 1 */}
-                      <div className="flex items-center space-x-3 w-full sm:w-auto justify-center sm:justify-start">
-                        <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center text-blue-700 font-bold text-lg shadow-inner">
-                          {match.team1.charAt(0)}
-                        </div>
-                        <h3 className="text-xl font-extrabold text-gray-900 text-center sm:text-left">{match.team1}</h3>
-                      </div>
-
-                      {/* VS */}
-                      <span className="text-red-500 text-2xl font-bold mx-2 sm:mx-4">vs</span>
-
-                      {/* Team 2 */}
-                      <div className="flex items-center space-x-3 w-full sm:w-auto justify-center sm:justify-end">
-                        <h3 className="text-xl font-extrabold text-gray-900 text-center sm:text-right">{match.team2}</h3>
-                        <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center text-green-700 font-bold text-lg shadow-inner">
-                          {match.team2.charAt(0)}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Date and Possible Scores */}
-                    <div className="flex flex-col sm:flex-row items-center justify-between mt-4 pt-3 border-t border-gray-100">
-                      <span className="text-sm text-gray-600 flex items-center mb-2 sm:mb-0">
-                        <Clock size={16} className="mr-1 text-gray-400" /> {formatDate(match.match_date)}
-                      </span>
-                      <span className="text-base font-semibold text-blue-600 flex items-center">
-                        <Users size={16} className="mr-1 text-blue-400" /> {Object.keys(match.betting_outcomes).length} possible scores
+                    <div className="flex items-center justify-between">
+                      <h3 className="lg:text-lg font-bold text-gray-900 flex items-center">
+                        {/* Team 1 Logo: Use team1_logo_url if available, otherwise fallback to placeholder */}
+                        <img
+                          src={match.team1_logo_url || `https://placehold.co/48x48/000000/FFFFFF?text=${match.team1.substring(0,1)}`}
+                          alt={`${match.team1} logo`}
+                          className="w-12 h-12 rounded-full mr-2 object-cover"
+                          onError={(e) => { e.target.onerror = null; e.target.src = 'https://placehold.co/48x48/CCCCCC/000000?text=?' }} // Fallback for broken URLs
+                        />
+                        {match.team1}
+                        <span className="text-red-500 mx-2 font-normal">vs</span>
+                        {/* Team 2 Logo: Use team2_logo_url if available, otherwise fallback to placeholder */}
+                        <img
+                          src={match.team2_logo_url || `https://placehold.co/48x48/000000/FFFFFF?text=${match.team2.substring(0,1)}`}
+                          alt={`${match.team2} logo`}
+                          className="w-12 h-12 rounded-full mr-2 object-cover"
+                          onError={(e) => { e.target.onerror = null; e.target.src = 'https://placehold.co/48x48/CCCCCC/000000?text=?' }} // Fallback for broken URLs
+                        />
+                        {match.team2}
+                      </h3>
+                      <span className="text-sm text-gray-600 flex items-center">
+                        <Clock size={16} className="mr-1 text-gray-400" /> {match.match_date}
                       </span>
                     </div>
+                    <p className="text-sm text-gray-500 mt-1">
+                      {Object.keys(match.betting_outcomes).length} possible scores
+                    </p>
                   </div>
                 ))
               ) : (
@@ -252,18 +229,18 @@ const BCHBettingApp = () => {
             <section className="mb-8 p-6 bg-blue-50 rounded-xl border border-blue-200 shadow-inner">
               <div className="flex justify-between items-center mb-4">
                 <h2 className="text-2xl font-semibold text-blue-800 flex items-center">
-                  <Users size={24} className="mr-2 text-blue-600" /> Make Your Prediction for {selectedMatch.team1} vs {selectedMatch.team2} {/* Changed "Bet on" to "Make Your Prediction for" */}
+                  <Users size={24} className="mr-2 text-blue-600" /> Make Your Prediction on {selectedMatch.team1} vs {selectedMatch.team2} {/* Changed "Bet on" to "Make Your Prediction on" */}
                 </h2>
                 <button
-                  onClick={clearSelectedPrediction} // Changed function call
+                  onClick={clearSelectedBet}
                   className="flex items-center text-sm text-red-600 hover:text-red-800 transition-colors duration-200"
-                  title="Clear current prediction selection"
+                  title="Clear current prediction selection" /* Changed "bet" to "prediction" */
                 >
-                  <XCircle size={18} className="mr-1" /> Clear Selection
+                  <XCircle size={18} className="mr-1" /> Clear Prediction {/* Changed "Bet" to "Prediction" */}
                 </button>
               </div>
               <p className="text-gray-700 mb-4 text-sm">
-                Entry Value: <span className="font-bold text-blue-700">${ticketValueUsd.toFixed(2)} USD</span> (approx. <span className="font-bold text-blue-700">{requiredBCH} BCH</span>)
+                Ticket Value: <span className="font-bold text-blue-700">${ticketValueUsd.toFixed(2)} USD</span> (approx. <span className="font-bold text-blue-700">{requiredBCH} BCH</span>)
               </p>
 
               <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(80px, 1fr))' }}>
@@ -271,9 +248,9 @@ const BCHBettingApp = () => {
                   <button
                     key={outcomeId}
                     className={`p-3 rounded-lg border transition-all duration-200 ease-in-out
-                                ${selectedOutcome?.score === outcome.score
-                                  ? 'bg-blue-600 text-white shadow-lg ring-2 ring-blue-700'
-                                  : 'bg-white text-gray-800 hover:bg-blue-100 hover:border-blue-500'}`}
+                                    ${selectedOutcome?.score === outcome.score
+                                      ? 'bg-blue-600 text-white shadow-lg ring-2 ring-blue-700'
+                                      : 'bg-white text-gray-800 hover:bg-blue-100 hover:border-blue-500'}`}
                     onClick={() => {
                       setSelectedOutcome(outcome);
                       console.log("Selected Outcome (from onClick):", outcome);
@@ -281,7 +258,7 @@ const BCHBettingApp = () => {
                   >
                     <span className="font-bold text-lg">{outcome.score}</span>
                     <p className={`text-xs ${selectedOutcome?.score === outcome.score ? 'text-blue-200' : 'text-gray-500'}`}>
-                      {outcome.bet_count} entries {/* Changed "tickets" to "entries" */}
+                      {outcome.bet_count} tickets
                     </p>
                   </button>
                 ))}
@@ -293,12 +270,12 @@ const BCHBettingApp = () => {
           {selectedOutcome && (
             <section className="p-6 bg-green-50 rounded-xl border border-green-200 shadow-md">
               <h2 className="text-2xl font-semibold text-green-800 mb-4 flex items-center">
-                <Zap size={24} className="mr-2 text-green-600" /> Confirm Your Selection {/* Changed "Place Your Bet" to "Confirm Your Selection" */}
+                <Zap size={24} className="mr-2 text-green-600" /> Place Your Prediction {/* Changed "Place Your Bet" to "Place Your Prediction" */}
               </h2> 
               <p className="text-gray-700 mb-4">
-                To make your prediction for score <span className="font-bold text-green-700 text-xl">{selectedOutcome.score}</span>, send your BCH to the address below.
-                Each entry costs exactly <span className="font-bold text-green-700 text-xl">{requiredBCH} BCH</span> (for ${ticketValueUsd.toFixed(2)} USD).
-                You can make multiple entries by sending multiples of this amount (e.g., { (parseFloat(requiredBCH) * 2).toFixed(8) } BCH for 2 entries). {/* Changed "tickets" to "entries" */}
+                To make a prediction for score <span className="font-bold text-green-700 text-xl">{selectedOutcome.score}</span>, send your BCH to the address below. {/* Changed "bet on" to "make a prediction for" */}
+                Each ticket costs exactly <span className="font-bold text-green-700 text-xl">{requiredBCH} BCH</span> (for ${ticketValueUsd.toFixed(2)} USD).
+                You can send multiple tickets by sending multiples of this amount (e.g., { (parseFloat(requiredBCH) * 2).toFixed(8) } BCH for 2 tickets).
               </p>
 
               {/* QR Code and Address Section */}
@@ -324,7 +301,7 @@ const BCHBettingApp = () => {
                       </p>
                     </div>
                     <div className="text-center sm:text-left">
-                      <p className="text-sm font-medium text-gray-600">Amount per Entry ($1 USD):</p> {/* Changed "Ticket" to "Entry" */}
+                      <p className="text-sm font-medium text-gray-600">Amount per Ticket ($1 USD):</p>
                       <p className="text-lg sm:text-xl font-bold text-green-700">
                         {requiredBCH} BCH
                       </p>
@@ -355,7 +332,7 @@ const BCHBettingApp = () => {
               </div>
 
               <p className="text-gray-600 text-xs mt-4 text-center sm:text-left">
-                * Ensure you send the exact amount per entry. Payments from non-originating addresses or with incorrect amounts may not be counted. {/* Changed "ticket" to "entry" */}
+                * Ensure you send the exact amount per ticket. Payments from non-originating addresses or with incorrect amounts may not be counted.
               </p>
             </section>
           )}
@@ -369,23 +346,23 @@ const BCHBettingApp = () => {
               Use this form to simulate a user sending BCH to a prediction outcome address. {/* Changed "betting" to "prediction" */}
               The origin address and the BCH amount will be randomly generated by the backend.
             </p>
-            <form onSubmit={handleSimulatePrediction} className="space-y-4"> {/* Changed function call */}
+            <form onSubmit={handleSimulateBet} className="space-y-4"> {/* Kept handler name for now, can be refactored to handleSimulatePrediction */}
               <div>
                 <label htmlFor="simulateMatchId" className="block text-sm font-medium text-gray-700">Match ID:</label>
                 <select
                   id="simulateMatchId"
                   className="mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
-                  value={simulatePredictionMatchId} // Changed state variable
+                  value={simulateBetMatchId}
                   onChange={(e) => {
-                    setSimulatePredictionMatchId(e.target.value); // Changed state variable
-                    setSimulatePredictionOutcomeId(''); // Changed state variable
+                    setSimulateBetMatchId(e.target.value);
+                    setSimulateBetOutcomeId(''); // Reset outcome when match changes
                   }}
                   required
                 >
                   <option value="">Select a Match</option>
                   {matches.map(match => (
                     <option key={match.match_id} value={match.match_id}>
-                      {match.team1} vs {match.team2} ({formatDate(match.match_date)})
+                          {match.team1} vs {match.team2} ({match.match_date})
                     </option>
                   ))}
                 </select>
@@ -395,14 +372,14 @@ const BCHBettingApp = () => {
                 <select
                   id="simulateOutcomeId"
                   className="mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
-                  value={simulatePredictionOutcomeId} // Changed state variable
-                  onChange={(e) => setSimulatePredictionOutcomeId(e.target.value)} // Changed state variable
+                  value={simulateBetOutcomeId}
+                  onChange={(e) => setSimulateBetOutcomeId(e.target.value)}
                   required
-                  disabled={!simulatePredictionMatchId} // Changed state variable
+                  disabled={!simulateBetMatchId}
                 >
                   <option value="">Select an Outcome</option>
-                  {simulatePredictionMatchId && matches.find(m => m.match_id === simulatePredictionMatchId)?.betting_outcomes &&
-                    Object.entries(matches.find(m => m.match_id === simulatePredictionMatchId).betting_outcomes).map(([outcomeId, outcome]) => (
+                  {simulateBetMatchId && matches.find(m => m.match_id === simulateBetMatchId)?.betting_outcomes &&
+                    Object.entries(matches.find(m => m.match_id === simulateBetMatchId).betting_outcomes).map(([outcomeId, outcome]) => (
                       <option key={outcomeId} value={outcomeId}>
                         {outcome.score}
                       </option>
@@ -417,12 +394,12 @@ const BCHBettingApp = () => {
                 <Send size={18} />
                 <span>Simulate Prediction</span> {/* Changed "Simulate Bet" to "Simulate Prediction" */}
               </button>
-              {simulatePredictionMessage && ( // Changed state variable
+              {simulateBetMessage && (
                 <p className="mt-2 text-center text-sm font-medium">
-                  {simulatePredictionMessage.startsWith('Success') ? ( // Changed state variable
-                    <span className="text-green-600 flex items-center justify-center"><CheckCircle size={16} className="mr-1" /> {simulatePredictionMessage}</span> // Changed state variable
+                  {simulateBetMessage.startsWith('Success') ? (
+                    <span className="text-green-600 flex items-center justify-center"><CheckCircle size={16} className="mr-1" /> {simulateBetMessage}</span>
                   ) : (
-                    <span className="text-red-700 flex items-center justify-center"><AlertCircle size={16} className="mr-1" /> {simulatePredictionMessage}</span> // Changed state variable
+                    <span className="text-red-700 flex items-center justify-center"><AlertCircle size={16} className="mr-1" /> {simulateBetMessage}</span>
                   )}
                 </p>
               )}
